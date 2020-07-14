@@ -7,8 +7,9 @@ import {
   Tabs,
   TabsItem,
   Button,
+  UserQuery,
   NerdGraphQuery,
-  UserStorageMutation,
+  NerdGraphMutation,
   EntityStorageMutation,
   Stack,
   StackItem
@@ -46,6 +47,7 @@ export default class GithubAbout extends React.PureComponent {
     super(props);
 
     this._setUserToken = this._setUserToken.bind(this);
+    this._deleteUserToken = this._deleteUserToken.bind(this);
     this._setRepo = this._setRepo.bind(this);
     this._deleteGithubUrl = this._deleteGithubUrl.bind(this);
     this.checkGithubUrl = this.checkGithubUrl.bind(this);
@@ -83,8 +85,8 @@ export default class GithubAbout extends React.PureComponent {
     const { entityGuid } = this.props.nerdletUrlState;
     const query = `{
       actor {
-        nerdStorage {
-          userToken: document(collection: "global", documentId: "userToken")
+        nerdStorageVault {
+          userToken: secret(name: "userToken")
         }
         user {name email id}
         entity(guid: "${entityGuid}") {
@@ -98,7 +100,7 @@ export default class GithubAbout extends React.PureComponent {
 
     const { data } = await NerdGraphQuery.query({ query });
     const accountId = get(data, 'actor.entity.account.id');
-    const userToken = get(data, 'actor.nerdStorage.userToken.userToken');
+    const userToken = get(data, 'actor.nerdStorageVault.userToken');
     const repoUrl = get(data, 'actor.entity.nerdStorage.repoUrl.repoUrl');
     const { user, entity } = data.actor;
 
@@ -195,14 +197,36 @@ export default class GithubAbout extends React.PureComponent {
   }
 
   async _setUserToken(userToken) {
-    const mutation = {
-      actionType: UserStorageMutation.ACTION_TYPE.WRITE_DOCUMENT,
-      collection: 'global',
-      documentId: 'userToken',
-      document: { userToken }
-    };
-    await UserStorageMutation.mutate(mutation);
+    const mutation = `mutation StoreUserToken($userId: ID!, $userToken: SecureValue!) {
+      nerdStorageVaultWriteSecret(
+        scope: ACTOR
+        scopeId: $userId
+        name: "userToken"
+        value: $userToken
+      ) {
+        status
+      }
+    }`
+    const { data } = await UserQuery.query();
+    const variables = {userId: data.id, userToken: userToken};
+    await NerdGraphMutation.mutate({ mutation, variables })
     this.setState({ userToken });
+  }
+
+  async _deleteUserToken() {
+    const mutation = `mutation DeleteUserToken($userId: ID!) {
+      nerdStorageVaultDeleteSecret(
+        scope: ACTOR
+        scopeId: $userId
+        name: "userToken"
+      ) {
+        status
+      }
+    }`
+    const { data } = await UserQuery.query();
+    const variables = {userId: data.id};
+    await NerdGraphMutation.mutate({ mutation, variables })
+    this.setState({ userToken: null });
   }
 
   async _setRepo(repoUrl) {
@@ -334,6 +358,7 @@ export default class GithubAbout extends React.PureComponent {
               githubUrl={githubUrl}
               setGithubUrl={this._setGithubUrl}
               setUserToken={this._setUserToken}
+              deleteUserToken={this._deleteUserToken}
               userToken={userToken}
               onError={this.onSetupErrors}
               setActiveTab={this._setActiveTab}
